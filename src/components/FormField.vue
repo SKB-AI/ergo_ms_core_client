@@ -75,22 +75,18 @@ const { t } = useAppI18n()
 }
 
 .form-field--align-center {
-  display: flex;
   align-items: center;
-  justify-content: flex-start;
-  column-gap: 0.5rem;
 
   .form-field__label {
-    flex: 0 1 auto;
-    max-width: calc(100% - 2rem);
     padding-top: 0;
   }
 
   .form-field__control {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    flex: 0 0 auto;
-    line-height: 0;
+    column-gap: 0.75rem;
+    row-gap: 0.25rem;
 
     :deep(.form-check-input) {
       display: block;
@@ -98,6 +94,11 @@ const { t } = useAppI18n()
       margin: 0;
       vertical-align: middle;
     }
+  }
+
+  .form-field__hint {
+    margin-top: 0;
+    flex: 1 1 10rem;
   }
 }
 
