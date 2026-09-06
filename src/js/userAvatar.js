@@ -122,13 +122,18 @@ export function parseErgoFullNameParts(fullName) {
 }
 
 /**
- * Единая точка для инициалов аватара: структурированные поля или Ergo-ФИО в title.
+ * Единая точка для инициалов аватара: структурированные first/last или Ergo-ФИО в title.
+ * Одно слово (логин) не считается ФИО — иначе DefaultAvatar рисует буквы вместо иконки User.
  * Callers не должны парсить full_name сами — передавать first/last с API или только title.
  */
 export function resolveAvatarNameParts({ firstName, lastName, fullName } = {}) {
   const fn = trimNamePart(firstName)
   const ln = trimNamePart(lastName)
   if (fn && ln) {
+    return { firstName: fn, lastName: ln }
+  }
+  const tokens = (fullName || '').trim().split(/\s+/).filter(Boolean)
+  if (tokens.length < 2) {
     return { firstName: fn, lastName: ln }
   }
   const parsed = parseErgoFullNameParts(fullName)
