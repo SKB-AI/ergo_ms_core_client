@@ -92,6 +92,10 @@ export class RouteManager extends ModuleLoader {
    * @returns {Function|null}
    */
   getComponentLoader(componentPath) {
+    if (typeof componentPath === 'function') {
+      return componentPath
+    }
+
     const loader = findComponentLoader(componentPath, this.getComponentsMap())
 
     if (!loader) {

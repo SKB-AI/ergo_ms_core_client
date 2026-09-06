@@ -76,8 +76,10 @@ export function createDeferredComponentImport(componentPath, getComponentsMap) {
     }
 
     // Новые .vue до перезапуска Vite: glob ещё без файла.
-    // import('@/...') с @vite-ignore не резолвит алиас — берём путь относительно этого файла.
-    if (import.meta.env.DEV) {
+    // import('@/...') с @vite-ignore не резолвит алиас. new URL от этого файла
+    // даёт рабочий /@fs/ путь только когда сам модуль уже с /@fs/; иначе
+    // получается http://host/modules/... и 404, который ложно считает клиент устаревшим.
+    if (import.meta.env.DEV && import.meta.url.includes('/@fs/')) {
       const relativePath = componentPathToGlobKey(componentPath)
       if (relativePath) {
         return wrapStaleAwareLoad(
