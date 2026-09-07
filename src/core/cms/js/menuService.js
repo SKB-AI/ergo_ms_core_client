@@ -500,7 +500,7 @@ export async function getAvailableIcons() {
 }
 
 /**
- * Восстанавливает пункты меню из populate-функций миграций (restore_menu)
+ * Восстанавливает пункты меню из ядра и каталогов живых модулей (restore_menu)
  * @returns {Promise<Object>}
  */
 export async function restoreMenuFromMigrations() {

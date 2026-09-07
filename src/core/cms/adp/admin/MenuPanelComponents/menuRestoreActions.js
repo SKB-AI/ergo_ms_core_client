@@ -1,5 +1,5 @@
 /**
- * Восстановление меню из миграций и отмена через showUndoableSuccess.
+ * Восстановление меню из ядра и живых модулей; отмена через showUndoableSuccess.
  */
 
 import { showUndoableSuccess } from '@/js/utils/toast.js'
