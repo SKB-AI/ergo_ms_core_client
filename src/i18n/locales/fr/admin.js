@@ -610,7 +610,7 @@
     restoreError: 'Échec de la restauration du menu',
     restoreUndone: 'Restauration du menu annulée',
     restoreUndoError: 'Échec de l’annulation de la restauration du menu',
-    undoRestoreKind: 'restauration du menu depuis les migrations',
+    undoRestoreKind: 'restauration du menu depuis les modules',
     separatorsLoadError: 'Échec du chargement des séparateurs : ',
     orderSaved: 'Ordre des éléments enregistré',
     orderSaveError: "Échec de l'enregistrement de l'ordre : ",

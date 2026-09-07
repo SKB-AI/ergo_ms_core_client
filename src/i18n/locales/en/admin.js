@@ -610,7 +610,7 @@
     restoreError: 'Failed to restore menu',
     restoreUndone: 'Menu restore undone',
     restoreUndoError: 'Failed to undo menu restore',
-    undoRestoreKind: 'restore menu from migrations',
+    undoRestoreKind: 'restore menu from modules',
     separatorsLoadError: 'Failed to load separators: ',
     orderSaved: 'Item order saved',
     orderSaveError: 'Failed to save order: ',
