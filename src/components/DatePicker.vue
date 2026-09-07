@@ -1,36 +1,17 @@
 <template>
   <div ref="rootRef" class="date-picker" :class="{ 'date-picker--invalid': invalid }">
-    <VueDatePicker
-      :model-value="pickerDate"
-      :text-input="!monthPicker"
-      :month-picker="monthPicker"
-      :year-range="yearRange"
-      :prevent-min-max-navigation="Boolean(minDateParsed || maxDateParsed)"
-      :locale="pickerLocale"
-      :formats="pickerFormats"
-      :input-attrs="inputAttrs"
-      :placeholder="resolvedPlaceholder"
-      :time-config="timeConfig"
-      auto-apply
-      six-weeks
-      :teleport="true"
-      :dark="isDark"
-      :floating="floatingConfig"
-      :config="pickerConfig"
-      :min-date="minDateParsed"
-      :max-date="maxDateParsed"
-      :disabled="disabled"
-      @update:model-value="onPickerUpdate"
-    >
+    <VueDatePicker :model-value="pickerDate" :text-input="textInputConfig" :month-picker="monthPicker" :year-range="yearRange" :prevent-min-max-navigation="Boolean(minDateParsed || maxDateParsed)" :locale="pickerLocale" :formats="pickerFormats" :input-attrs="inputAttrs" :placeholder="resolvedPlaceholder" :time-config="timeConfig" auto-apply six-weeks :teleport="true" :dark="isDark" :floating="floatingConfig" :config="pickerConfig" :min-date="minDateParsed" :max-date="maxDateParsed" :disabled="disabled" @update:model-value="onPickerUpdate">
       <template #input-icon>
         <span class="date-picker__glyph">
           <LucideIcon name="Calendar" :size="ICON_SIZE" aria-hidden="true" />
         </span>
       </template>
       <template #clear-icon="{ clear }">
-        <button type="button" class="date-picker__glyph" :aria-label="t('components.datePicker.clear')" @click.stop="clear">
-          <LucideIcon name="X" :size="ICON_SIZE" aria-hidden="true" />
-        </button>
+        <HoverTooltip :text="t('components.datePicker.clear')">
+          <button type="button" class="date-picker__glyph" :aria-label="t('components.datePicker.clear')" @click.stop="clear">
+            <LucideIcon name="X" :size="ICON_SIZE" aria-hidden="true" />
+          </button>
+        </HoverTooltip>
       </template>
     </VueDatePicker>
   </div>
@@ -43,6 +24,7 @@ import { fr } from 'date-fns/locale/fr'
 import { ru } from 'date-fns/locale/ru'
 import { VueDatePicker } from '@vuepic/vue-datepicker'
 import '@vuepic/vue-datepicker/dist/main.css'
+import HoverTooltip from '@/components/HoverTooltip.vue'
 import LucideIcon from '@/components/LucideIcon.vue'
 import { useAppI18n } from '@/i18n/useAppI18n.js'
 import { useThemeMode } from '@/composables/useThemeMode.js'
@@ -120,6 +102,14 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  inputFormat: {
+    type: String,
+    default: '',
+  },
+  editFormat: {
+    type: String,
+    default: '',
+  },
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -129,7 +119,39 @@ const { isDark } = useThemeMode()
 
 const pickerLocale = computed(() => DATE_FNS_LOCALES[getLocale()] || ru)
 const is12Hour = computed(() => props.enableTime && props.timeFormat === '12' && !props.monthPicker)
-const useDigitMask = computed(() => !is12Hour.value && !props.monthPicker)
+const isInputFocused = ref(false)
+
+const defaultInputFormat = computed(() => {
+  if (props.monthPicker) return 'LLLL yyyy'
+  if (!props.enableTime) return 'dd.MM.yyyy'
+  return is12Hour.value ? 'dd.MM.yyyy hh:mm aa' : 'dd.MM.yyyy HH:mm'
+})
+
+const activeInputFormat = computed(() => {
+  if (isInputFocused.value && props.editFormat) return props.editFormat
+  return props.inputFormat || defaultInputFormat.value
+})
+
+const isNumericInputFormat = computed(() => (
+  !/[ML]{3,}/.test(activeInputFormat.value) && !activeInputFormat.value.includes('aa')
+))
+
+const useShortYearMask = computed(() => (
+  activeInputFormat.value.includes('yy') && !activeInputFormat.value.includes('yyyy')
+))
+
+const useDigitMask = computed(() => (
+  !props.monthPicker && !is12Hour.value && isNumericInputFormat.value
+))
+
+const textInputConfig = computed(() => {
+  if (props.monthPicker) return false
+  if (!props.editFormat) return true
+  return {
+    format: props.editFormat,
+    selectOnFocus: true,
+  }
+})
 
 const resolvedPlaceholder = computed(() => {
   if (props.placeholder) return props.placeholder
@@ -141,13 +163,7 @@ const resolvedPlaceholder = computed(() => {
 })
 
 const pickerFormats = computed(() => ({
-  input: props.monthPicker
-    ? 'LLLL yyyy'
-    : props.enableTime
-      ? is12Hour.value
-        ? 'dd.MM.yyyy hh:mm aa'
-        : 'dd.MM.yyyy HH:mm'
-      : 'dd.MM.yyyy',
+  input: activeInputFormat.value,
 }))
 
 const timeConfig = computed(() => ({
@@ -161,7 +177,7 @@ const pickerDate = computed(() => (
 ))
 
 const inputAttrs = computed(() => ({
-  inputmode: props.monthPicker || is12Hour.value ? 'text' : 'numeric',
+  inputmode: props.monthPicker || is12Hour.value || !useDigitMask.value ? 'text' : 'numeric',
   autocomplete: 'off',
   hideInputIcon: Boolean(pickerDate.value) && !props.disabled,
   ...(props.id ? { id: props.id } : {}),
@@ -247,6 +263,14 @@ function isDateInputTarget(target) {
   )
 }
 
+function isNumericDateInputValue(value) {
+  return !/[^\d.:,\s]/.test(String(value ?? ''))
+}
+
+function applyMaskDigit(input, digit) {
+  applyDigitToDateInput(input, digit, props.enableTime, useShortYearMask.value)
+}
+
 function onKeydown(event) {
   if (!useDigitMask.value) return
   if (!isDateInputTarget(event.target)) return
@@ -254,15 +278,24 @@ function onKeydown(event) {
 
   const input = event.target
 
+  if (!isNumericDateInputValue(input.value) && input.value) {
+    if (/^\d$/.test(event.key)) {
+      event.preventDefault()
+      input.value = ''
+      applyMaskDigit(input, event.key)
+    }
+    return
+  }
+
   if (/^\d$/.test(event.key)) {
     event.preventDefault()
-    applyDigitToDateInput(input, event.key, props.enableTime)
+    applyMaskDigit(input, event.key)
     return
   }
 
   if (event.key === '.' || (props.enableTime && (event.key === ':' || event.key === ' '))) {
     event.preventDefault()
-    advanceCaretToNextDateSection(input, props.enableTime)
+    advanceCaretToNextDateSection(input, props.enableTime, useShortYearMask.value)
     return
   }
 
@@ -273,8 +306,9 @@ function onKeydown(event) {
 function onInput(event) {
   if (!useDigitMask.value) return
   if (!isDateInputTarget(event.target)) return
+  if (!isNumericDateInputValue(event.target.value)) return
   const input = event.target
-  if (normalizeDateInputMask(input, props.enableTime)) {
+  if (normalizeDateInputMask(input, props.enableTime, useShortYearMask.value)) {
     input.dispatchEvent(new Event('input', { bubbles: true }))
   }
 }
@@ -287,7 +321,21 @@ function onPaste(event) {
   if (!invalidChars.test(pasted)) return
 
   event.preventDefault()
-  applyPastedDigitsToDateInput(event.target, pasted, props.enableTime)
+  applyPastedDigitsToDateInput(event.target, pasted, props.enableTime, useShortYearMask.value)
+}
+
+function isPickerOverlay(target) {
+  return target instanceof Element && Boolean(target.closest('.dp__menu, .dp--menu, .dp__overlay'))
+}
+
+function onFocusIn(event) {
+  if (isDateInputTarget(event.target)) isInputFocused.value = true
+}
+
+function onFocusOut(event) {
+  if (isPickerOverlay(event.relatedTarget)) return
+  if (rootRef.value?.contains(event.relatedTarget)) return
+  isInputFocused.value = false
 }
 
 onMounted(() => {
@@ -296,6 +344,8 @@ onMounted(() => {
   el.addEventListener('keydown', onKeydown)
   el.addEventListener('input', onInput)
   el.addEventListener('paste', onPaste)
+  el.addEventListener('focusin', onFocusIn)
+  el.addEventListener('focusout', onFocusOut)
 })
 
 onBeforeUnmount(() => {
@@ -304,6 +354,8 @@ onBeforeUnmount(() => {
   el.removeEventListener('keydown', onKeydown)
   el.removeEventListener('input', onInput)
   el.removeEventListener('paste', onPaste)
+  el.removeEventListener('focusin', onFocusIn)
+  el.removeEventListener('focusout', onFocusOut)
 })
 </script>
 
@@ -330,10 +382,12 @@ onBeforeUnmount(() => {
     }
 
     &:focus,
-    &:focus-visible {
+    &:focus-visible,
+    &.dp__input_focus,
+    &.dp--input-focus {
       outline: none;
-      background: var(--color-hover-background);
-      border-color: var(--color-border);
+      background: var(--color-primary-background);
+      border-color: var(--ui-accent, var(--color-accent, var(--bs-primary)));
       box-shadow: none;
     }
 
@@ -378,6 +432,12 @@ onBeforeUnmount(() => {
     outline: 2px solid var(--color-primary-text);
     outline-offset: 1px;
   }
+}
+
+:deep(.hover-tooltip) {
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
 }
 
 .date-picker__glyph {
