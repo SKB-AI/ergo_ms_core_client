@@ -41,6 +41,8 @@ export default {
     noDataDisplay: 'Aucune donnée à afficher',
     loading: 'Chargement...',
     actions: 'Actions',
+    sortToolbar: 'Tri',
+    sortColumn: 'Trier par « {column} »',
   },
   spinner: {
     loading: 'Chargement...',

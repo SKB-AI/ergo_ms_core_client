@@ -41,6 +41,8 @@ export default {
     noDataDisplay: 'Нет данных для отображения',
     loading: 'Загрузка...',
     actions: 'Действия',
+    sortToolbar: 'Сортировка',
+    sortColumn: 'Сортировать по колонке «{column}»',
   },
   spinner: {
     loading: 'Загрузка...',

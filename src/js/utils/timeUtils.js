@@ -294,9 +294,64 @@ export function formatYearMonthKeyRu(monthKey) {
     const month = Number(monthStr)
     if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return '—'
 
-    const date = new Date(year, month - 1, 1)
-    const label = date.toLocaleDateString(getCurrentBcp47(), { month: 'long', year: 'numeric' })
-    return label.charAt(0).toUpperCase() + label.slice(1)
+    return formatMonthYear(new Date(year, month - 1, 1)) || '—'
+}
+
+/**
+ * Месяц и год: «Сентябрь 2026 г.» (локаль интерфейса).
+ * @param {string|Date} date
+ * @returns {string}
+ */
+export function formatMonthYear(date) {
+    const d = parseDate(date)
+    if (!d) return ''
+
+    const label = d.toLocaleDateString(getCurrentBcp47(), { month: 'long', year: 'numeric' })
+    if (!label) return ''
+    return capitalizeFirst(label)
+}
+
+/**
+ * Название дня недели для даты: «Понедельник» / «Пн».
+ * @param {string|Date} date
+ * @param {'long'|'short'|'narrow'} [style='long']
+ * @returns {string}
+ */
+export function formatWeekday(date, style = 'long') {
+    const d = parseDate(date)
+    if (!d) return ''
+    if (!['long', 'short', 'narrow'].includes(style)) {
+        return ''
+    }
+
+    try {
+        const raw = new Intl.DateTimeFormat(getCurrentBcp47(), { weekday: style }).format(d)
+        return capitalizeFirst(raw)
+    } catch {
+        return ''
+    }
+}
+
+/**
+ * Дни недели с понедельника на языке интерфейса.
+ * @param {'long'|'short'|'narrow'} [style='long']
+ * @returns {string[]}
+ */
+export function getWeekdayNames(style = 'long') {
+    if (!['long', 'short', 'narrow'].includes(style)) {
+        return []
+    }
+
+    const names = []
+    for (let i = 0; i < 7; i++) {
+        names.push(formatWeekday(new Date(2024, 0, 1 + i), style))
+    }
+    return names
+}
+
+function capitalizeFirst(value) {
+    if (!value) return ''
+    return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
 /**

@@ -41,6 +41,8 @@ export default {
     noDataDisplay: 'No data to display',
     loading: 'Loading...',
     actions: 'Actions',
+    sortToolbar: 'Sort',
+    sortColumn: 'Sort by “{column}”',
   },
   spinner: {
     loading: 'Loading...',

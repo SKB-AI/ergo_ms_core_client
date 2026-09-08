@@ -1,25 +1,20 @@
 <template>
   <div class="data-table">
     <div v-if="useCards" class="data-table-cards">
+      <div v-if="sortableColumns.length" class="data-table-cards__sort" role="toolbar" :aria-label="t('components.dataTable.sortToolbar')">
+        <button v-for="column in sortableColumns" :key="column.key" type="button" class="data-table-sort data-table-sort--chip" :class="{ 'data-table-sort--active': isSortedColumn(column) }" :aria-label="t('components.dataTable.sortColumn', { column: column.label })" :aria-pressed="isSortedColumn(column)" @click="handleSort(column)">
+          <span>{{ column.label }}</span>
+          <component :is="sortIcon(column)" :size="14" aria-hidden="true" />
+        </button>
+      </div>
       <div v-if="!displayItems.length" class="data-table-cards__empty">
         <slot name="empty">{{ resolvedEmptyText }}</slot>
       </div>
-      <article
-        v-for="(item, idx) in displayItems"
-        v-else
-        :key="getItemKey(item, idx)"
-        class="data-table-card"
-        :class="[getRowClass(item, idx), { 'data-table-card--clickable': clickable }]"
-        @click="handleRowClick(item, idx)"
-      >
+      <article v-for="(item, idx) in displayItems" v-else :key="getItemKey(item, idx)" class="data-table-card" :class="[getRowClass(item, idx), { 'data-table-card--clickable': clickable }]" @click="handleRowClick(item, idx)">
         <div v-if="showNumberColumn" class="data-table-card__meta text-muted">
           № {{ displayNumberOffset + idx + 1 }}
         </div>
-        <div
-          v-for="column in cardBodyColumns"
-          :key="column.key"
-          class="data-table-card__row"
-        >
+        <div v-for="column in cardBodyColumns" :key="column.key" class="data-table-card__row">
           <div v-if="column.label" class="data-table-card__label">{{ column.label }}</div>
           <div class="data-table-card__value" :class="column.cellClass">
             <slot :name="`cell-${column.key}`" :item="item" :index="idx" :column="column">
@@ -40,8 +35,12 @@
         <thead class="data-table-header">
           <tr>
             <th v-if="showNumberColumn" style="width: 50px;">№</th>
-            <th v-for="column in visibleColumns" :key="column.key" :class="column.headerClass" :style="column.headerStyle">
-              {{ column.label }}
+            <th v-for="column in visibleColumns" :key="column.key" :class="[column.headerClass, { 'data-table-header--sortable': column.sortable }]" :style="column.headerStyle" :aria-sort="ariaSort(column)">
+              <button v-if="column.sortable" type="button" class="data-table-sort" :class="{ 'data-table-sort--active': isSortedColumn(column) }" :aria-label="t('components.dataTable.sortColumn', { column: column.label })" @click="handleSort(column)">
+                <span>{{ column.label }}</span>
+                <component :is="sortIcon(column)" :size="14" aria-hidden="true"/>
+              </button>
+              <template v-else>{{ column.label }}</template>
             </th>
           </tr>
         </thead>
@@ -63,24 +62,13 @@
       </table>
     </div>
 
-    <Pagination
-      v-if="enablePagination"
-      :model-value="currentPage"
-      :total-pages="totalPages"
-      :total-items="paginationTotalItems"
-      :page-size="itemsPerPage"
-      :visible-count="displayItems.length"
-      :variant="paginationVariant"
-      layout="toolbar"
-      :has-next-page="paginationHasNext"
-      :has-previous-page="paginationHasPrevious"
-      @update:model-value="handlePageChange"
-    />
+    <Pagination v-if="enablePagination" :model-value="currentPage" :total-pages="totalPages" :total-items="paginationTotalItems" :page-size="itemsPerPage" :visible-count="displayItems.length" :variant="paginationVariant" layout="toolbar" :has-next-page="paginationHasNext" :has-previous-page="paginationHasPrevious" @update:model-value="handlePageChange"/>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import { ArrowUpDown, ChevronDown, ChevronUp } from '@lucide/vue'
 import Pagination from '@/components/Pagination.vue'
 import { BREAKPOINTS, useBreakpoint } from '@/composables/useBreakpoint.js'
 import { useAppI18n } from '@/i18n/useAppI18n.js'
@@ -161,9 +149,18 @@ const props = defineProps({
     default: 'sm',
     validator: (value) => ['sm', 'md', 'lg', 'xl', 'xxl', 'never', ''].includes(value),
   },
+  sortKey: {
+    type: String,
+    default: '',
+  },
+  sortDirection: {
+    type: String,
+    default: 'asc',
+    validator: (value) => ['asc', 'desc'].includes(value),
+  },
 })
 
-const emit = defineEmits(['rowClick', 'update:currentPage', 'pageChange'])
+const emit = defineEmits(['rowClick', 'update:currentPage', 'pageChange', 'update:sortKey', 'update:sortDirection'])
 
 const resolvedEmptyText = computed(
   () => props.emptyText ?? t('components.dataTable.noData'),
@@ -210,6 +207,43 @@ const actionsColumn = computed(() =>
 const cardBodyColumns = computed(() =>
   visibleColumns.value.filter((column) => !isActionsColumn(column)),
 )
+
+const sortableColumns = computed(() =>
+  visibleColumns.value.filter((column) => column.sortable),
+)
+
+function isSortedColumn(column) {
+  return Boolean(column?.sortable && column.key && props.sortKey === column.key)
+}
+
+function ariaSort(column) {
+  if (!column?.sortable) {
+    return undefined
+  }
+  if (!isSortedColumn(column)) {
+    return 'none'
+  }
+  return props.sortDirection === 'desc' ? 'descending' : 'ascending'
+}
+
+function sortIcon(column) {
+  if (!isSortedColumn(column)) {
+    return ArrowUpDown
+  }
+  return props.sortDirection === 'desc' ? ChevronDown : ChevronUp
+}
+
+function handleSort(column) {
+  if (!column?.sortable || !column.key) {
+    return
+  }
+  if (props.sortKey === column.key) {
+    emit('update:sortDirection', props.sortDirection === 'asc' ? 'desc' : 'asc')
+    return
+  }
+  emit('update:sortKey', column.key)
+  emit('update:sortDirection', 'asc')
+}
 
 function getCellValue(item, column) {
   if (column.value) {
@@ -322,6 +356,66 @@ const displayNumberOffset = computed(() => {
 <style lang="scss" scoped>
 .data-table-header {
   background-color: var(--color-secondary-background);
+}
+
+.data-table-header--sortable {
+  white-space: nowrap;
+}
+
+.data-table-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: inherit;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--color-accent, var(--ui-text));
+  }
+
+  svg {
+    flex-shrink: 0;
+    opacity: 0.55;
+  }
+
+  &--active svg {
+    opacity: 1;
+  }
+}
+
+.data-table-sort--chip {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--color-border, var(--ui-border));
+  border-radius: 999px;
+  background: var(--color-primary-background, var(--ui-surface));
+  color: var(--color-primary-text, var(--ui-text));
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+
+  &[aria-pressed='true'] {
+    border-color: var(--color-accent, var(--ui-border));
+    color: var(--color-accent, var(--ui-text));
+  }
+}
+
+.data-table-cards__sort {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .table-row-click {
