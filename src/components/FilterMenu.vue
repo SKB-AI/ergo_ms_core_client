@@ -142,7 +142,7 @@ const activeField = computed(() =>
 )
 
 const activeCount = computed(() =>
-  props.fields.filter((field) => field.type !== 'heading' && !isEmptyValue(field.key)).length,
+  props.fields.filter((field) => isCountableActiveField(field)).length,
 )
 
 const hasActiveValues = computed(() => activeCount.value > 0)
@@ -225,6 +225,13 @@ function isEmptyValue(key) {
     return !Array.isArray(value) || value.length === 0
   }
   return value === null || value === undefined || value === ''
+}
+
+function isCountableActiveField(field) {
+  if (!field || field.type === 'heading') return false
+  if (isEmptyValue(field.key)) return false
+  if (field.defaultValue === undefined) return true
+  return !valuesAreEqual(props.modelValue?.[field.key], field.defaultValue)
 }
 
 function getFieldRawValue(key) {
@@ -380,7 +387,11 @@ function handleReset() {
   const cleared = { ...props.modelValue }
   for (const field of props.fields) {
     if (field.type === 'heading') continue
-    cleared[field.key] = isFieldMultiple(field) ? [] : ''
+    if (field.defaultValue !== undefined) {
+      cleared[field.key] = field.defaultValue
+    } else {
+      cleared[field.key] = isFieldMultiple(field) ? [] : ''
+    }
   }
   emit('update:modelValue', cleared)
   emit('reset')
