@@ -69,16 +69,52 @@ export function pdfPageViewport(page, { scale = 1, rotation = 0 } = {}) {
   return page.getViewport({ scale, rotation: total })
 }
 
+const activeRenderTasks = new Set()
+
+function isCancelledRender(error) {
+  const name = error?.name || ''
+  return name === 'RenderingCancelledException' || name === 'AbortException'
+}
+
+export function cancelPdfPageRenders() {
+  for (const task of activeRenderTasks) {
+    try {
+      task.cancel()
+    } catch {
+      // pdf.js сам бросает RenderingCancelledException на ожидающий promise.
+    }
+  }
+  activeRenderTasks.clear()
+}
+
 export async function renderPdfPage(page, canvas, scale, options = {}) {
   const ratio = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
   const viewport = pdfPageViewport(page, { scale, rotation: options.rotation })
   const context = canvas.getContext('2d', { alpha: false })
   const displayWidth = Math.floor(viewport.width)
   const displayHeight = Math.floor(viewport.height)
+  // Смена width/height стирает bitmap. Без заливки непрозрачный canvas чёрный —
+  // оборванный page.render оставляет «чёрную страницу» с обрывками линий.
   canvas.width = Math.floor(displayWidth * ratio)
   canvas.height = Math.floor(displayHeight * ratio)
   context.setTransform(ratio, 0, 0, ratio, 0, 0)
-  const task = page.render({ canvasContext: context, viewport })
-  await task.promise
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, displayWidth, displayHeight)
+  const task = page.render({
+    canvasContext: context,
+    viewport,
+    intent: 'display',
+  })
+  activeRenderTasks.add(task)
+  try {
+    await task.promise
+  } catch (error) {
+    if (isCancelledRender(error)) {
+      return null
+    }
+    throw error
+  } finally {
+    activeRenderTasks.delete(task)
+  }
   return { width: displayWidth, height: displayHeight }
 }

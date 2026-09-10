@@ -209,6 +209,7 @@ import {
   pageRotation,
   stepStartPage,
   visiblePageNumbers,
+  waitForBox,
 } from '@/js/utils/documentViewerLayout.js'
 
 const ZOOM_MIN = 0.5
@@ -400,7 +401,10 @@ async function renderCurrentPdfPage() {
     return
   }
   const token = ++renderToken
-  const { pdfPageViewport, renderPdfPage } = await import('@/js/utils/documentViewerPdf.js')
+  const { cancelPdfPageRenders, pdfPageViewport, renderPdfPage } = await import(
+    '@/js/utils/documentViewerPdf.js'
+  )
+  cancelPdfPageRenders()
   const numbers = visiblePageNumbers(page.value, pagesPerView.value, pageCount.value)
   const loaded = []
   for (const number of numbers) {
@@ -413,12 +417,7 @@ async function renderCurrentPdfPage() {
   if (!canvasEls[0]) {
     await nextTick()
   }
-  if (!stageRef.value?.offsetHeight) {
-    await new Promise((resolve) => {
-      requestAnimationFrame(resolve)
-    })
-  }
-  const stage = stageRef.value
+  const stage = await waitForBox(() => stageRef.value)
   if (!stage || token !== renderToken) {
     return
   }
@@ -437,8 +436,17 @@ async function renderCurrentPdfPage() {
     if (!canvas || token !== renderToken) {
       return
     }
-    const size = await renderPdfPage(loaded[index], canvas, scale, { rotation })
-    styles.push(size ? { width: `${size.width}px`, height: `${size.height}px` } : {})
+    let size = null
+    try {
+      size = await renderPdfPage(loaded[index], canvas, scale, { rotation })
+    } catch (error) {
+      logError('DocumentViewer.renderCurrentPdfPage', error)
+      return
+    }
+    if (!size || token !== renderToken) {
+      return
+    }
+    styles.push({ width: `${size.width}px`, height: `${size.height}px` })
   }
   if (token !== renderToken) {
     return
@@ -531,6 +539,9 @@ onUnmounted(() => {
   renderToken += 1
   pdfDoc = null
   window.clearTimeout(resizeTimer)
+  import('@/js/utils/documentViewerPdf.js').then(({ cancelPdfPageRenders }) => {
+    cancelPdfPageRenders()
+  }).catch(() => {})
   unbindStage(stageRef.value)
   if (stageObserver) {
     stageObserver.disconnect()

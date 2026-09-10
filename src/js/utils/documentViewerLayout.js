@@ -31,6 +31,19 @@ export function stepStartPage(start, direction, perView, total) {
   return Math.min(Math.max(1, next), last)
 }
 
+export async function waitForBox(getEl, { minWidth = 160, minHeight = 160, frames = 12 } = {}) {
+  for (let step = 0; step < frames; step += 1) {
+    const el = getEl()
+    if (el && el.offsetWidth >= minWidth && el.offsetHeight >= minHeight) {
+      return el
+    }
+    await new Promise((resolve) => {
+      requestAnimationFrame(resolve)
+    })
+  }
+  return getEl()
+}
+
 export function fitPagesScale(sizes, availW, availH, cols, gap = PAGE_GAP) {
   if (!sizes.length) {
     return 1
