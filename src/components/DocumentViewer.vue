@@ -65,7 +65,7 @@
       </HoverTooltip>
     </div>
 
-    <div class="document-viewer__stage">
+    <div ref="stageRef" class="document-viewer__stage">
       <div v-if="loading" class="document-viewer__state">
         <SpinnerLoading :loading-text="t('components.documentViewer.loading')" />
       </div>
@@ -125,9 +125,11 @@ import {
   fetchMediaBlob,
 } from '@/js/utils/mediaPreview.js'
 
-const ZOOM_MIN = 0.6
-const ZOOM_MAX = 2.4
-const ZOOM_STEP = 0.2
+const ZOOM_MIN = 0.5
+const ZOOM_MAX = 3
+const ZOOM_STEP = 0.25
+const STAGE_PAD = 24
+const WHEEL_PAGE_MS = 320
 
 const props = defineProps({
   src: {
@@ -159,11 +161,16 @@ const zoom = ref(1)
 const pdfCanvas = ref(null)
 const pdfCanvasStyle = ref({})
 const docxHost = ref(null)
+const stageRef = ref(null)
 
 let pdfDoc = null
 let pdfPage = null
 let loadToken = 0
 let renderToken = 0
+let wheelAt = 0
+let resizeTimer = 0
+let scrollAfterRender = 'top'
+let stageObserver = null
 
 const zoomLabel = computed(() => `${Math.round(zoom.value * 100)}%`)
 
@@ -173,9 +180,91 @@ function goPage(next) {
 }
 
 function changeZoom(delta) {
-  const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round((zoom.value + delta) * 10) / 10))
-  zoom.value = next
+  const stepped = Math.round((zoom.value + delta) / ZOOM_STEP) * ZOOM_STEP
+  zoom.value = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(stepped * 100) / 100))
 }
+
+function pageFitScale(pdfPageEl) {
+  const stage = stageRef.value
+  if (!pdfPageEl || !stage) {
+    return 1
+  }
+  const base = pdfPageEl.getViewport({ scale: 1 })
+  // offsetWidth не сжимается из‑за полосы прокрутки, иначе fit и зум начинают прыгать.
+  const availW = Math.max(80, stage.offsetWidth - STAGE_PAD)
+  const availH = Math.max(80, stage.offsetHeight - STAGE_PAD)
+  if (base.width <= 0 || base.height <= 0) {
+    return 1
+  }
+  return Math.min(availW / base.width, availH / base.height)
+}
+
+function onStageWheel(event) {
+  if (kind.value !== DOCUMENT_PREVIEW_KIND.PDF) {
+    return
+  }
+  if (event.ctrlKey) {
+    event.preventDefault()
+    changeZoom(event.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP)
+    return
+  }
+  const stage = stageRef.value
+  if (!stage || pageCount.value <= 1) {
+    return
+  }
+  const delta = event.deltaY
+  if (delta === 0) {
+    return
+  }
+  const goingDown = delta > 0
+  const atTop = stage.scrollTop <= 1
+  const atBottom = stage.scrollTop + stage.clientHeight >= stage.scrollHeight - 1
+  const canFlip =
+    (goingDown && atBottom && page.value < pageCount.value)
+    || (!goingDown && atTop && page.value > 1)
+  if (!canFlip) {
+    return
+  }
+  event.preventDefault()
+  const now = Date.now()
+  if (now - wheelAt < WHEEL_PAGE_MS) {
+    return
+  }
+  wheelAt = now
+  scrollAfterRender = goingDown ? 'top' : 'bottom'
+  goPage(page.value + (goingDown ? 1 : -1))
+}
+
+function bindStage(el) {
+  if (!el) {
+    return
+  }
+  el.addEventListener('wheel', onStageWheel, { passive: false })
+  if (stageObserver) {
+    stageObserver.observe(el)
+  }
+}
+
+function unbindStage(el) {
+  if (!el) {
+    return
+  }
+  el.removeEventListener('wheel', onStageWheel)
+  if (stageObserver) {
+    stageObserver.unobserve(el)
+  }
+}
+
+function schedulePdfRerender() {
+  window.clearTimeout(resizeTimer)
+  resizeTimer = window.setTimeout(() => {
+    if (!loading.value && pdfDoc && kind.value === DOCUMENT_PREVIEW_KIND.PDF) {
+      renderCurrentPdfPage()
+    }
+  }, 80)
+}
+
+stageObserver = new ResizeObserver(schedulePdfRerender)
 
 async function downloadFile() {
   if (!props.src) {
@@ -213,14 +302,26 @@ async function renderCurrentPdfPage() {
   }
   pdfPage = current
   await nextTick()
+  if (!stageRef.value?.offsetHeight) {
+    await new Promise((resolve) => {
+      requestAnimationFrame(resolve)
+    })
+  }
   if (!pdfCanvas.value || token !== renderToken) {
     return
   }
-  const size = await renderPdfPage(current, pdfCanvas.value, zoom.value)
+  const scale = pageFitScale(current) * zoom.value
+  const size = await renderPdfPage(current, pdfCanvas.value, scale)
   if (size && token === renderToken) {
     pdfCanvasStyle.value = {
       width: `${size.width}px`,
       height: `${size.height}px`,
+    }
+    await nextTick()
+    const stage = stageRef.value
+    if (stage && scrollAfterRender) {
+      stage.scrollTop = scrollAfterRender === 'bottom' ? stage.scrollHeight : 0
+      scrollAfterRender = null
     }
   }
 }
@@ -295,11 +396,21 @@ watch([page, zoom], () => {
   }
 })
 
+watch(stageRef, (el, prev) => {
+  unbindStage(prev)
+  bindStage(el)
+})
+
 onUnmounted(() => {
   loadToken += 1
   renderToken += 1
   pdfDoc = null
   pdfPage = null
+  window.clearTimeout(resizeTimer)
+  unbindStage(stageRef.value)
+  if (stageObserver) {
+    stageObserver.disconnect()
+  }
 })
 </script>
 
@@ -402,7 +513,7 @@ onUnmounted(() => {
 
 .document-viewer__canvas {
   display: block;
-  max-width: 100%;
+  max-width: none;
   height: auto;
   background: var(--ui-surface);
   box-shadow: var(--ui-shadow-sm, none);

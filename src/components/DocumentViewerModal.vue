@@ -54,16 +54,43 @@ const { t } = useAppI18n()
 </script>
 
 <style lang="scss">
-.document-viewer-modal .modal-body {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
+// ModalCenter без scrollable сжимает standalone-диалог до ~500px —
+// size="fullscreen" тогда не действует. Нужен почти весь viewport.
+.document-viewer-modal {
+  .mc-standalone__dialog,
+  .mc-standalone__dialog:not(.modal-dialog-scrollable),
+  .modal-dialog {
+    width: calc(100% - 1.5rem) !important;
+    max-width: calc(100% - 1.5rem) !important;
+    height: min(96dvh, calc(100% - 1.5rem)) !important;
+    max-height: 96dvh !important;
+    margin: 0.75rem auto !important;
+  }
 
-.document-viewer-modal .document-viewer {
-  flex: 1 1 auto;
-  min-height: 0;
-  border: 0;
-  border-radius: 0;
+  .modal-content,
+  .mc-standalone__dialog:not(.modal-dialog-scrollable) .modal-content {
+    display: flex;
+    flex-direction: column;
+    height: 100% !important;
+    max-height: 96dvh !important;
+  }
+
+  .modal-body,
+  .mc-standalone__dialog:not(.modal-dialog-scrollable) .modal-body {
+    display: flex;
+    flex: 1 1 auto !important;
+    flex-direction: column;
+    min-height: 0;
+    height: auto !important;
+    max-height: none !important;
+    overflow: hidden !important;
+  }
+
+  .document-viewer {
+    flex: 1 1 auto;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+  }
 }
 </style>
