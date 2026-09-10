@@ -63,9 +63,15 @@ export async function openPdfDocument(data) {
   return pdfjs.getDocument({ data: bytes }).promise
 }
 
-export async function renderPdfPage(page, canvas, scale) {
+export function pdfPageViewport(page, { scale = 1, rotation = 0 } = {}) {
+  const extra = ((Number(rotation) % 360) + 360) % 360
+  const total = ((Number(page.rotate) || 0) + extra) % 360
+  return page.getViewport({ scale, rotation: total })
+}
+
+export async function renderPdfPage(page, canvas, scale, options = {}) {
   const ratio = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
-  const viewport = page.getViewport({ scale })
+  const viewport = pdfPageViewport(page, { scale, rotation: options.rotation })
   const context = canvas.getContext('2d', { alpha: false })
   const displayWidth = Math.floor(viewport.width)
   const displayHeight = Math.floor(viewport.height)

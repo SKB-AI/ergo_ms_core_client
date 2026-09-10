@@ -8,21 +8,21 @@
             class="document-viewer__icon-btn"
             :disabled="page <= 1"
             :aria-label="t('components.documentViewer.prevPage')"
-            @click="goPage(page - 1)"
+            @click="goPage(page - pagesPerView)"
           >
             <ChevronLeft :size="18" aria-hidden="true" />
           </button>
         </HoverTooltip>
         <span class="document-viewer__page">
-          {{ t('components.documentViewer.pageOf', { current: page, total: pageCount }) }}
+          {{ pageLabel }}
         </span>
         <HoverTooltip :text="t('components.documentViewer.nextPage')" wrap>
           <button
             type="button"
             class="document-viewer__icon-btn"
-            :disabled="page >= pageCount"
+            :disabled="!canNextPage"
             :aria-label="t('components.documentViewer.nextPage')"
-            @click="goPage(page + 1)"
+            @click="goPage(page + pagesPerView)"
           >
             <ChevronRight :size="18" aria-hidden="true" />
           </button>
@@ -50,6 +50,68 @@
             @click="changeZoom(ZOOM_STEP)"
           >
             <ZoomIn :size="18" aria-hidden="true" />
+          </button>
+        </HoverTooltip>
+      </div>
+      <div v-if="kind === 'pdf'" class="document-viewer__layout">
+        <HoverTooltip :text="t('components.documentViewer.portrait')" wrap>
+          <button
+            type="button"
+            class="document-viewer__icon-btn"
+            :class="{ 'document-viewer__icon-btn--active': orientation === 'portrait' }"
+            :aria-label="t('components.documentViewer.portrait')"
+            :aria-pressed="orientation === 'portrait'"
+            @click="orientation = 'portrait'"
+          >
+            <RectangleVertical :size="18" aria-hidden="true" />
+          </button>
+        </HoverTooltip>
+        <HoverTooltip :text="t('components.documentViewer.landscape')" wrap>
+          <button
+            type="button"
+            class="document-viewer__icon-btn"
+            :class="{ 'document-viewer__icon-btn--active': orientation === 'landscape' }"
+            :aria-label="t('components.documentViewer.landscape')"
+            :aria-pressed="orientation === 'landscape'"
+            @click="orientation = 'landscape'"
+          >
+            <RectangleHorizontal :size="18" aria-hidden="true" />
+          </button>
+        </HoverTooltip>
+        <HoverTooltip :text="t('components.documentViewer.pagesOne')" wrap>
+          <button
+            type="button"
+            class="document-viewer__icon-btn"
+            :class="{ 'document-viewer__icon-btn--active': pagesPerView === 1 }"
+            :aria-label="t('components.documentViewer.pagesOne')"
+            :aria-pressed="pagesPerView === 1"
+            @click="pagesPerView = 1"
+          >
+            <Square :size="18" aria-hidden="true" />
+          </button>
+        </HoverTooltip>
+        <HoverTooltip :text="t('components.documentViewer.pagesTwo')" wrap>
+          <button
+            type="button"
+            class="document-viewer__icon-btn"
+            :class="{ 'document-viewer__icon-btn--active': pagesPerView === 2 }"
+            :aria-label="t('components.documentViewer.pagesTwo')"
+            :aria-pressed="pagesPerView === 2"
+            @click="pagesPerView = 2"
+          >
+            <Columns2 :size="18" aria-hidden="true" />
+          </button>
+        </HoverTooltip>
+        <HoverTooltip :text="t('components.documentViewer.pagesFour')" wrap>
+          <button
+            type="button"
+            class="document-viewer__icon-btn"
+            :class="{ 'document-viewer__icon-btn--active': pagesPerView === 4 }"
+            :aria-label="t('components.documentViewer.pagesFour')"
+            :aria-pressed="pagesPerView === 4"
+            @click="pagesPerView = 4"
+          >
+            <LayoutGrid :size="18" aria-hidden="true" />
           </button>
         </HoverTooltip>
       </div>
@@ -83,12 +145,15 @@
       <div
         v-else-if="kind === 'pdf'"
         class="document-viewer__pdf"
+        :class="`document-viewer__pdf--cols-${pdfCols}`"
       >
         <canvas
-          ref="pdfCanvas"
+          v-for="(n, idx) in visiblePages"
+          :key="`${n}-${orientation}`"
+          :ref="(el) => bindCanvas(idx, el)"
           class="document-viewer__canvas"
-          v-csp-style="pdfCanvasStyle"
-          :aria-label="t('components.documentViewer.pdfPage', { current: page, total: pageCount })"
+          v-csp-style="canvasStyles[idx] || emptyStyle"
+          :aria-label="pageAriaLabel"
         />
       </div>
       <div
@@ -113,7 +178,18 @@
 
 <script setup>
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
-import { ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut } from '@lucide/vue'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Columns2,
+  Download,
+  LayoutGrid,
+  RectangleHorizontal,
+  RectangleVertical,
+  Square,
+  ZoomIn,
+  ZoomOut,
+} from '@lucide/vue'
 import HoverTooltip from '@/components/HoverTooltip.vue'
 import SpinnerLoading from '@/components/SpinnerLoading.vue'
 import { useAppI18n } from '@/i18n/useAppI18n.js'
@@ -124,6 +200,16 @@ import {
   detectDocumentPreviewKind,
   fetchMediaBlob,
 } from '@/js/utils/mediaPreview.js'
+import {
+  PAGE_GAP,
+  canGoNext,
+  fitPagesScale,
+  lastVisiblePage,
+  layoutColumns,
+  pageRotation,
+  stepStartPage,
+  visiblePageNumbers,
+} from '@/js/utils/documentViewerLayout.js'
 
 const ZOOM_MIN = 0.5
 const ZOOM_MAX = 3
@@ -158,13 +244,15 @@ const kind = ref(DOCUMENT_PREVIEW_KIND.UNSUPPORTED)
 const page = ref(1)
 const pageCount = ref(1)
 const zoom = ref(1)
-const pdfCanvas = ref(null)
-const pdfCanvasStyle = ref({})
+const orientation = ref('portrait')
+const pagesPerView = ref(1)
+const canvasStyles = ref([])
+const emptyStyle = {}
 const docxHost = ref(null)
 const stageRef = ref(null)
+const canvasEls = []
 
 let pdfDoc = null
-let pdfPage = null
 let loadToken = 0
 let renderToken = 0
 let wheelAt = 0
@@ -173,30 +261,48 @@ let scrollAfterRender = 'top'
 let stageObserver = null
 
 const zoomLabel = computed(() => `${Math.round(zoom.value * 100)}%`)
+const visiblePages = computed(() => (
+  visiblePageNumbers(page.value, pagesPerView.value, pageCount.value)
+))
+const pdfCols = computed(() => layoutColumns(pagesPerView.value))
+const canNextPage = computed(() => (
+  canGoNext(page.value, pagesPerView.value, pageCount.value)
+))
+const pageEnd = computed(() => (
+  lastVisiblePage(page.value, pagesPerView.value, pageCount.value)
+))
+const pageLabel = computed(() => {
+  if (pageEnd.value === page.value) {
+    return t('components.documentViewer.pageOf', { current: page.value, total: pageCount.value })
+  }
+  return t('components.documentViewer.pageRangeOf', {
+    from: page.value,
+    to: pageEnd.value,
+    total: pageCount.value,
+  })
+})
+const pageAriaLabel = computed(() => {
+  if (pageEnd.value === page.value) {
+    return t('components.documentViewer.pdfPage', { current: page.value, total: pageCount.value })
+  }
+  return t('components.documentViewer.pdfPageRange', {
+    from: page.value,
+    to: pageEnd.value,
+    total: pageCount.value,
+  })
+})
+
+function bindCanvas(idx, el) {
+  canvasEls[idx] = el
+}
 
 function goPage(next) {
-  const safe = Math.min(Math.max(1, Number(next) || 1), pageCount.value)
-  page.value = safe
+  page.value = Math.min(Math.max(1, Number(next) || 1), pageCount.value)
 }
 
 function changeZoom(delta) {
   const stepped = Math.round((zoom.value + delta) / ZOOM_STEP) * ZOOM_STEP
   zoom.value = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(stepped * 100) / 100))
-}
-
-function pageFitScale(pdfPageEl) {
-  const stage = stageRef.value
-  if (!pdfPageEl || !stage) {
-    return 1
-  }
-  const base = pdfPageEl.getViewport({ scale: 1 })
-  // offsetWidth не сжимается из‑за полосы прокрутки, иначе fit и зум начинают прыгать.
-  const availW = Math.max(80, stage.offsetWidth - STAGE_PAD)
-  const availH = Math.max(80, stage.offsetHeight - STAGE_PAD)
-  if (base.width <= 0 || base.height <= 0) {
-    return 1
-  }
-  return Math.min(availW / base.width, availH / base.height)
 }
 
 function onStageWheel(event) {
@@ -220,7 +326,7 @@ function onStageWheel(event) {
   const atTop = stage.scrollTop <= 1
   const atBottom = stage.scrollTop + stage.clientHeight >= stage.scrollHeight - 1
   const canFlip =
-    (goingDown && atBottom && page.value < pageCount.value)
+    (goingDown && atBottom && canGoNext(page.value, pagesPerView.value, pageCount.value))
     || (!goingDown && atTop && page.value > 1)
   if (!canFlip) {
     return
@@ -232,7 +338,7 @@ function onStageWheel(event) {
   }
   wheelAt = now
   scrollAfterRender = goingDown ? 'top' : 'bottom'
-  goPage(page.value + (goingDown ? 1 : -1))
+  goPage(stepStartPage(page.value, goingDown ? 1 : -1, pagesPerView.value, pageCount.value))
 }
 
 function bindStage(el) {
@@ -279,7 +385,6 @@ async function downloadFile() {
 
 function resetView() {
   pdfDoc = null
-  pdfPage = null
   page.value = 1
   pageCount.value = 1
   zoom.value = 1
@@ -295,34 +400,54 @@ async function renderCurrentPdfPage() {
     return
   }
   const token = ++renderToken
-  const { renderPdfPage } = await import('@/js/utils/documentViewerPdf.js')
-  const current = await pdfDoc.getPage(page.value)
-  if (token !== renderToken) {
-    return
+  const { pdfPageViewport, renderPdfPage } = await import('@/js/utils/documentViewerPdf.js')
+  const numbers = visiblePageNumbers(page.value, pagesPerView.value, pageCount.value)
+  const loaded = []
+  for (const number of numbers) {
+    loaded.push(await pdfDoc.getPage(number))
+    if (token !== renderToken) {
+      return
+    }
   }
-  pdfPage = current
   await nextTick()
+  if (!canvasEls[0]) {
+    await nextTick()
+  }
   if (!stageRef.value?.offsetHeight) {
     await new Promise((resolve) => {
       requestAnimationFrame(resolve)
     })
   }
-  if (!pdfCanvas.value || token !== renderToken) {
+  const stage = stageRef.value
+  if (!stage || token !== renderToken) {
     return
   }
-  const scale = pageFitScale(current) * zoom.value
-  const size = await renderPdfPage(current, pdfCanvas.value, scale)
-  if (size && token === renderToken) {
-    pdfCanvasStyle.value = {
-      width: `${size.width}px`,
-      height: `${size.height}px`,
+  const rotation = pageRotation(orientation.value)
+  const sizes = loaded.map((item) => {
+    const view = pdfPageViewport(item, { scale: 1, rotation })
+    return { width: view.width, height: view.height }
+  })
+  // offsetWidth не сжимается из‑за полосы прокрутки, иначе fit и зум начинают прыгать.
+  const availW = Math.max(80, stage.offsetWidth - STAGE_PAD)
+  const availH = Math.max(80, stage.offsetHeight - STAGE_PAD)
+  const scale = fitPagesScale(sizes, availW, availH, layoutColumns(pagesPerView.value), PAGE_GAP) * zoom.value
+  const styles = []
+  for (let index = 0; index < loaded.length; index += 1) {
+    const canvas = canvasEls[index]
+    if (!canvas || token !== renderToken) {
+      return
     }
-    await nextTick()
-    const stage = stageRef.value
-    if (stage && scrollAfterRender) {
-      stage.scrollTop = scrollAfterRender === 'bottom' ? stage.scrollHeight : 0
-      scrollAfterRender = null
-    }
+    const size = await renderPdfPage(loaded[index], canvas, scale, { rotation })
+    styles.push(size ? { width: `${size.width}px`, height: `${size.height}px` } : {})
+  }
+  if (token !== renderToken) {
+    return
+  }
+  canvasStyles.value = styles
+  await nextTick()
+  if (stageRef.value && scrollAfterRender) {
+    stageRef.value.scrollTop = scrollAfterRender === 'bottom' ? stageRef.value.scrollHeight : 0
+    scrollAfterRender = null
   }
 }
 
@@ -390,7 +515,7 @@ async function loadDocument() {
 }
 
 watch(() => [props.src, props.filename], loadDocument, { immediate: true })
-watch([page, zoom], () => {
+watch([page, zoom, orientation, pagesPerView], () => {
   if (!loading.value && kind.value === DOCUMENT_PREVIEW_KIND.PDF && pdfDoc) {
     renderCurrentPdfPage()
   }
@@ -405,7 +530,6 @@ onUnmounted(() => {
   loadToken += 1
   renderToken += 1
   pdfDoc = null
-  pdfPage = null
   window.clearTimeout(resizeTimer)
   unbindStage(stageRef.value)
   if (stageObserver) {
@@ -447,7 +571,8 @@ onUnmounted(() => {
 }
 
 .document-viewer__nav,
-.document-viewer__zoom {
+.document-viewer__zoom,
+.document-viewer__layout {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
@@ -455,7 +580,7 @@ onUnmounted(() => {
 
 .document-viewer__page,
 .document-viewer__zoom-label {
-  min-width: 5.5rem;
+  min-width: 7rem;
   text-align: center;
   font-size: 0.8125rem;
   color: var(--ui-text-muted);
@@ -480,6 +605,11 @@ onUnmounted(() => {
 
   &:disabled {
     opacity: 0.4;
+  }
+
+  &--active {
+    background: color-mix(in srgb, var(--ui-accent) 14%, var(--ui-surface));
+    border-color: var(--ui-border);
   }
 }
 
@@ -506,9 +636,20 @@ onUnmounted(() => {
 }
 
 .document-viewer__pdf {
-  display: flex;
+  display: grid;
   justify-content: center;
+  justify-items: center;
+  align-content: start;
+  gap: 0.75rem;
   padding: 0.75rem;
+}
+
+.document-viewer__pdf--cols-1 {
+  grid-template-columns: max-content;
+}
+
+.document-viewer__pdf--cols-2 {
+  grid-template-columns: repeat(2, max-content);
 }
 
 .document-viewer__canvas {
