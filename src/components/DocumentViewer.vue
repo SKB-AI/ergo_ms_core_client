@@ -53,7 +53,7 @@
           </button>
         </HoverTooltip>
       </div>
-      <div v-if="kind === 'pdf'" class="document-viewer__layout">
+      <div v-if="kind === 'pdf' && !compact" class="document-viewer__layout">
         <HoverTooltip :text="t('components.documentViewer.portrait')" wrap>
           <button
             type="button"
@@ -555,6 +555,7 @@ onUnmounted(() => {
 .document-viewer {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 18rem;
   height: 100%;
   background: var(--ui-surface);
@@ -652,6 +653,7 @@ onUnmounted(() => {
   justify-items: center;
   align-content: start;
   gap: 0.75rem;
+  max-width: 100%;
   padding: 0.75rem;
 }
 
@@ -665,7 +667,7 @@ onUnmounted(() => {
 
 .document-viewer__canvas {
   display: block;
-  max-width: none;
+  max-width: 100%;
   height: auto;
   background: var(--ui-surface);
   box-shadow: var(--ui-shadow-sm, none);
