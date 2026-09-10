@@ -255,6 +255,7 @@ async function loadDocument() {
       return
     }
     kind.value = result.kind
+    let docxBuffer = null
     if (result.kind === DOCUMENT_PREVIEW_KIND.PDF) {
       const { openPdfDocument } = await import('@/js/utils/documentViewerPdf.js')
       pdfDoc = await openPdfDocument(await result.blob.arrayBuffer())
@@ -262,9 +263,8 @@ async function loadDocument() {
         return
       }
       pageCount.value = pdfDoc.numPages || 1
-      await renderCurrentPdfPage()
     } else if (result.kind === DOCUMENT_PREVIEW_KIND.DOCX) {
-      await renderDocx(await result.blob.arrayBuffer())
+      docxBuffer = await result.blob.arrayBuffer()
     }
   } catch (error) {
     if (token !== loadToken) {
@@ -276,6 +276,15 @@ async function loadDocument() {
     if (token === loadToken) {
       loading.value = false
     }
+  }
+  // Полотно и контейнер DOCX спрятаны за v-if="loading": рисовать после finally.
+  if (token !== loadToken) {
+    return
+  }
+  if (kind.value === DOCUMENT_PREVIEW_KIND.PDF && pdfDoc) {
+    await renderCurrentPdfPage()
+  } else if (kind.value === DOCUMENT_PREVIEW_KIND.DOCX && docxBuffer) {
+    await renderDocx(docxBuffer)
   }
 }
 
